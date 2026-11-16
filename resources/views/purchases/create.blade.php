@@ -1,3 +1,19 @@
+@php
+    $variantsJson = $variants->map(function ($v) {
+        return [
+            'id' => (string) $v->id,
+            'name' => $v->product->name . ' (' . $v->variant_name . ')',
+            'product_name' => $v->product->name,
+            'variant_name' => $v->variant_name,
+            'sku' => $v->sku,
+            'barcode' => $v->barcode ?: $v->product->barcode,
+            'product_sku' => $v->product->sku,
+            'current_hpp' => (float) ($v->current_hpp ?: 0),
+            'stock' => $v->stock,
+        ];
+    });
+@endphp
+
 <x-layouts.app>
     <x-slot:title>Penerimaan Barang Masuk — Rose Colection</x-slot:title>
 
@@ -70,14 +86,54 @@
 
             <!-- Section 2: Daftar Barang Diterima -->
             <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-                <div class="flex items-center justify-between">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                         <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">2. Rincian Barang & Varian Masuk</h2>
-                        <p class="text-xs text-slate-400">Pilih varian produk, kuantitas yang diterima, dan harga beli per unit.</p>
+                        <p class="text-xs text-slate-400">Pindai barcode pakaian atau pilih dari daftar untuk menambahkan stok.</p>
                     </div>
-                    <button type="button" @click="addItem()" class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1 transition-colors">
+                    <button type="button" @click="addItem()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 transition-colors self-start sm:self-auto">
                         <x-icon name="plus" class="w-3.5 h-3.5" />
-                        <span>Tambah Baris</span>
+                        <span>Tambah Baris Manual</span>
+                    </button>
+                </div>
+
+                <!-- SCAN BARCODE BOX (Scanner Hardware Integration) -->
+                <div class="p-4 bg-gradient-to-r from-rose-50 to-pink-50/50 rounded-2xl border border-rose-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-sm shadow-rose-200 shrink-0">
+                            <x-icon name="barcode" class="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-bold text-slate-900 flex items-center gap-2">
+                                <span>Scan Barcode Barang untuk Tambah Stok</span>
+                                <span class="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    Siap Scan
+                                </span>
+                            </h4>
+                            <p class="text-[11px] text-slate-500">Tembakkan scanner barcode ke label pakaian, produk akan otomatis muncul di tabel bawah.</p>
+                        </div>
+                    </div>
+
+                    <div class="relative w-full sm:w-80">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-rose-500">
+                            <x-icon name="search" class="w-4 h-4" />
+                        </span>
+                        <input type="text" x-model="barcodeScanInput" @keydown.enter.prevent="handleBarcodeScan()"
+                            placeholder="Arahkan scanner ke barcode..."
+                            class="w-full pl-9 pr-3 py-2.5 rounded-xl border border-rose-300 focus:border-rose-600 focus:ring-4 focus:ring-rose-500/10 text-xs font-mono font-bold bg-white outline-none placeholder:font-sans placeholder:font-normal placeholder:text-rose-400">
+                    </div>
+                </div>
+
+                <!-- Scan Feedback Toast -->
+                <div x-show="scanAlert" x-transition style="display: none;"
+                    :class="scanAlertType === 'success' ? 'bg-slate-900 text-white' : 'bg-rose-600 text-white'"
+                    class="p-3 rounded-2xl text-xs font-bold flex items-center justify-between shadow-lg">
+                    <div class="flex items-center gap-2">
+                        <x-icon name="check" class="w-4 h-4 text-emerald-400" />
+                        <span x-text="scanAlert"></span>
+                    </div>
+                    <button type="button" @click="scanAlert = ''" class="text-slate-400 hover:text-white">
+                        <x-icon name="x" class="w-3.5 h-3.5" />
                     </button>
                 </div>
 
@@ -97,7 +153,7 @@
                             <template x-for="(item, index) in items" :key="index">
                                 <tr>
                                     <td class="p-2.5 w-72">
-                                        <select :name="`items[${index}][product_variant_id]`" x-model="item.product_variant_id" required
+                                        <select :name="`items[${index}][product_variant_id]`" x-model="item.product_variant_id" @change="onVariantChange(item)" required
                                             class="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:border-rose-500 outline-none">
                                             <option value="">-- Pilih Barang / Varian --</option>
                                             @foreach($variants as $var)
@@ -170,8 +226,12 @@
             return {
                 additionalCost: 0,
                 discountAmount: 0,
+                barcodeScanInput: '',
+                scanAlert: '',
+                scanAlertType: 'success',
+                availableVariants: @json($variantsJson),
                 items: [
-                    { product_variant_id: '', quantity: 10, purchase_price: 100000, discount_amount: 0 }
+                    { product_variant_id: '', quantity: 1, purchase_price: 0, discount_amount: 0 }
                 ],
                 addItem() {
                     this.items.push({
@@ -185,6 +245,60 @@
                     if (this.items.length > 1) {
                         this.items.splice(index, 1);
                     }
+                },
+                onVariantChange(item) {
+                    if (!item.product_variant_id) return;
+                    const v = this.availableVariants.find(x => String(x.id) === String(item.product_variant_id));
+                    if (v && (!item.purchase_price || item.purchase_price == 0)) {
+                        item.purchase_price = v.current_hpp || 0;
+                    }
+                },
+                handleBarcodeScan() {
+                    const raw = (this.barcodeScanInput || '').trim();
+                    if (!raw) return;
+
+                    const query = raw.toLowerCase();
+                    const found = this.availableVariants.find(v => 
+                        (v.barcode && v.barcode.toLowerCase() === query) ||
+                        (v.sku && v.sku.toLowerCase() === query) ||
+                        (v.product_sku && v.product_sku.toLowerCase() === query)
+                    );
+
+                    if (!found) {
+                        this.scanAlertType = 'error';
+                        this.scanAlert = `Barcode / SKU "${raw}" tidak ditemukan di database produk!`;
+                        this.barcodeScanInput = '';
+                        setTimeout(() => { if (this.scanAlert.includes(raw)) this.scanAlert = ''; }, 4000);
+                        return;
+                    }
+
+                    // Check if item already exists in items list
+                    const existing = this.items.find(i => String(i.product_variant_id) === String(found.id));
+                    if (existing) {
+                        existing.quantity = (parseInt(existing.quantity) || 0) + 1;
+                        this.scanAlertType = 'success';
+                        this.scanAlert = `Berhasil menambah kuantitas (+1) untuk "${found.name}". Total masuk: ${existing.quantity}`;
+                    } else {
+                        // If single row is empty, fill it
+                        if (this.items.length === 1 && !this.items[0].product_variant_id) {
+                            this.items[0].product_variant_id = String(found.id);
+                            this.items[0].quantity = 1;
+                            this.items[0].purchase_price = found.current_hpp || 0;
+                            this.items[0].discount_amount = 0;
+                        } else {
+                            this.items.push({
+                                product_variant_id: String(found.id),
+                                quantity: 1,
+                                purchase_price: found.current_hpp || 0,
+                                discount_amount: 0
+                            });
+                        }
+                        this.scanAlertType = 'success';
+                        this.scanAlert = `Berhasil menambahkan: "${found.name}" (HPP Estimasi: Rp ${(found.current_hpp || 0).toLocaleString('id-ID')})`;
+                    }
+
+                    this.barcodeScanInput = '';
+                    setTimeout(() => { this.scanAlert = ''; }, 5000);
                 },
                 lineTotal(item) {
                     const gross = (item.quantity || 0) * (item.purchase_price || 0);

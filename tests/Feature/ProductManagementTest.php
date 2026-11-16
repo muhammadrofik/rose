@@ -196,4 +196,15 @@ class ProductManagementTest extends TestCase
 
         $response->assertSessionHas('error');
     }
+
+    public function test_purchase_reception_page_renders_with_barcode_scanner(): void
+    {
+        $this->actingAs($this->admin);
+
+        $response = $this->get(route('purchases.create'));
+
+        $response->assertStatus(200);
+        $response->assertSee('Scan Barcode Barang untuk Tambah Stok');
+        $response->assertSee('handleBarcodeScan()');
+    }
 }
