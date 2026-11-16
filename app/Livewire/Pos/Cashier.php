@@ -14,6 +14,8 @@ class Cashier extends Component
 {
     public string $search = '';
 
+    public string $barcodeInput = '';
+
     public ?int $selectedCategory = null;
 
     // Cart: array of items keyed by variant_id
@@ -70,6 +72,55 @@ class Cashier extends Component
         $this->variantModalOpen = false;
         $this->activeProduct = null;
         $this->activeProductId = null;
+    }
+
+    /**
+     * Handle physical barcode scanner input.
+     * Looks up barcode or SKU across variants and products.
+     */
+    public function scanBarcode(?string $code = null): void
+    {
+        $barcode = trim($code ?? $this->barcodeInput);
+        if (empty($barcode)) {
+            return;
+        }
+
+        // 1. Search in Product Variants (exact barcode or SKU)
+        $variant = ProductVariant::with('product')
+            ->where('barcode', $barcode)
+            ->orWhere('sku', $barcode)
+            ->first();
+
+        // 2. If not found in variants, search in Products
+        if (! $variant) {
+            $product = Product::with('variants')
+                ->where('barcode', $barcode)
+                ->orWhere('sku', $barcode)
+                ->first();
+
+            if ($product) {
+                if ($product->variants->count() === 1) {
+                    $variant = $product->variants->first();
+                } else {
+                    $this->openVariantModal($product->id);
+                    $this->barcodeInput = '';
+                    $this->errorMessage = '';
+
+                    return;
+                }
+            }
+        }
+
+        if ($variant) {
+            $this->addVariantToCart($variant->id);
+            $this->barcodeInput = '';
+            $this->errorMessage = '';
+            $this->dispatch('barcode-scanned-success', name: $variant->full_name);
+        } else {
+            $this->errorMessage = "Barang dengan barcode '{$barcode}' tidak ditemukan.";
+            $this->barcodeInput = '';
+            $this->dispatch('barcode-scanned-failed', barcode: $barcode);
+        }
     }
 
     public function addProductToCart(int $productId): void

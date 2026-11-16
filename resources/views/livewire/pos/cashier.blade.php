@@ -1,26 +1,99 @@
-<div class="h-[calc(100vh-5rem)] flex flex-col lg:flex-row overflow-hidden -m-8">
+<div class="h-[calc(100vh-5rem)] flex flex-col lg:flex-row overflow-hidden -m-8"
+    x-data="{
+        barcodeBuffer: '',
+        lastKeystroke: 0,
+        scanNotification: '',
+        notify(text) {
+            this.scanNotification = text;
+            setTimeout(() => { this.scanNotification = ''; }, 2500);
+        },
+        init() {
+            window.addEventListener('keydown', (e) => {
+                const target = e.target;
+                // If user is focused on customer name, notes, or discount, don't intercept standard typing
+                if (target && (target.name === 'customerName' || target.name === 'notes' || target.name === 'discount_amount')) {
+                    return;
+                }
+
+                const now = Date.now();
+                // Barcode scanner sends keystrokes with < 50ms latency
+                if (now - this.lastKeystroke > 75) {
+                    this.barcodeBuffer = '';
+                }
+                this.lastKeystroke = now;
+
+                if (e.key === 'Enter') {
+                    if (this.barcodeBuffer.length >= 3) {
+                        e.preventDefault();
+                        $wire.scanBarcode(this.barcodeBuffer);
+                        this.notify('Pindai Barcode: ' + this.barcodeBuffer);
+                        this.barcodeBuffer = '';
+                    }
+                } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    this.barcodeBuffer += e.key;
+                }
+            });
+
+            Livewire.on('barcode-scanned-success', (event) => {
+                this.notify('✓ ' + (event.name || 'Produk') + ' masuk keranjang!');
+            });
+        }
+    }">
     <!-- LEFT PANEL: PRODUCT SELECTION & CATEGORY PILLS (Image 2 Style) -->
     <div class="flex-1 flex flex-col min-w-0 bg-[#faf7f5] border-r border-slate-200/80 overflow-hidden">
-        <!-- Top Bar: Search & Barcode -->
-        <div class="p-6 pb-4 bg-white border-b border-slate-100 flex items-center justify-between gap-4 shrink-0">
+        <!-- Top Bar: Search & Barcode Scanner Input -->
+        <div class="p-6 pb-4 bg-white border-b border-slate-100 flex flex-wrap items-center justify-between gap-4 shrink-0">
             <div class="flex items-center gap-3">
                 <a href="{{ route('dashboard') }}" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors" title="Kembali ke Dashboard">
                     <x-icon name="chevron-left" class="w-5 h-5" />
                 </a>
                 <div>
-                    <h1 class="text-lg font-extrabold text-slate-900 tracking-tight">Kasir POS — Pilih Produk</h1>
-                    <p class="text-xs text-slate-400">Pilih pakaian atau pindai barcode untuk menambahkan ke struk.</p>
+                    <h1 class="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                        <span>Kasir POS</span>
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Scanner Barcode Aktif
+                        </span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Arahkan alat scan ke barcode baju/barang atau cari produk secara manual.</p>
                 </div>
             </div>
 
-            <!-- Search input -->
-            <div class="relative w-72">
-                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <x-icon name="search" class="w-4 h-4" />
-                </span>
-                <input type="text" wire:model.live.debounce.300ms="search" placeholder="Cari nama, SKU, barcode..."
-                    class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 text-xs transition-all outline-none bg-slate-50/50">
+            <!-- Barcode Scanner Direct Input & Search Bar -->
+            <div class="flex items-center gap-2.5">
+                <!-- Barcode dedicated field (auto-press enter on scan) -->
+                <form wire:submit.prevent="scanBarcode" class="relative">
+                    <div class="relative w-56">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-rose-600">
+                            <x-icon name="barcode" class="w-4 h-4" />
+                        </span>
+                        <input type="text" wire:model="barcodeInput" autofocus
+                            placeholder="Scan Barcode di sini..."
+                            class="w-full pl-9 pr-3 py-2 rounded-xl border border-rose-300 focus:border-rose-600 focus:ring-4 focus:ring-rose-500/15 text-xs font-mono font-bold bg-rose-50/40 outline-none text-slate-900 placeholder:text-rose-400 placeholder:font-sans">
+                    </div>
+                </form>
+
+                <!-- Search input -->
+                <div class="relative w-64">
+                    <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <x-icon name="search" class="w-4 h-4" />
+                    </span>
+                    <input type="text" wire:model.live.debounce.300ms="search" placeholder="Cari nama atau SKU..."
+                        class="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 focus:border-slate-400 text-xs transition-all outline-none bg-slate-50">
+                </div>
             </div>
+        </div>
+
+        <!-- Scan Notification Toast -->
+        <div x-show="scanNotification" x-transition.duration.300ms style="display: none;"
+            class="mx-6 mt-3 p-3 rounded-2xl bg-slate-900 text-white text-xs font-bold flex items-center justify-between shadow-lg shadow-slate-300 shrink-0">
+            <div class="flex items-center gap-2">
+                <span class="p-1 rounded-lg bg-emerald-500 text-white">
+                    <x-icon name="check" class="w-3.5 h-3.5" />
+                </span>
+                <span x-text="scanNotification"></span>
+            </div>
+            <span class="text-[10px] text-slate-400">Barcode Scanner Detected</span>
         </div>
 
         <!-- Horizontal Category Pills Filter -->

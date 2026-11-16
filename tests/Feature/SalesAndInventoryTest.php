@@ -214,4 +214,17 @@ class SalesAndInventoryTest extends TestCase
         $this->assertEquals(-2, $movement->quantity_change);
         $this->assertEquals(3, $movement->quantity_after);
     }
+
+    public function test_pos_barcode_scanner_adds_item_to_cart_instantly(): void
+    {
+        $this->actingAs($this->cashier);
+
+        $barcode = '899998888777';
+        $this->variant->update(['barcode' => $barcode]);
+
+        \Livewire\Livewire::test(\App\Livewire\Pos\Cashier::class)
+            ->call('scanBarcode', $barcode)
+            ->assertSet('cart.' . $this->variant->id . '.quantity', 1)
+            ->assertSet('errorMessage', '');
+    }
 }
